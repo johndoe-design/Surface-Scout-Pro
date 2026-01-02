@@ -1,9 +1,6 @@
 streamlit
+geopandas
 folium
 streamlit-folium
-geopandas
 fiona
 pyproj
-shapely
-pandas
-opencv-python-headless
