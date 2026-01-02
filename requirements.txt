@@ -2,6 +2,8 @@ streamlit
 folium
 streamlit-folium
 geopandas
-owslib
-opencv-python-headless
+fiona
+pyproj
 shapely
+pandas
+opencv-python-headless
