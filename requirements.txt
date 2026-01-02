@@ -4,6 +4,5 @@ folium
 streamlit-folium
 fiona
 pyproj
-shapely
 pandas
-opencv-python-headless
+numpy
