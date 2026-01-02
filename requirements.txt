@@ -6,3 +6,5 @@ fiona
 pyproj
 pandas
 numpy
+requests
+opencv-python-headless
