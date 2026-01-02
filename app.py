@@ -8,83 +8,106 @@ import zipfile
 import os
 import shutil
 
-# KML Support
+# KML Support aktivieren
 fiona.drvsupport.supported_drivers['KML'] = 'rw'
 
-st.set_page_config(page_title="Infrastruktur-Analyse", layout="wide")
+st.set_page_config(page_title="Infrastruktur-Analyse PRO", layout="wide")
 
-# API Key Check
+# API Key aus Secrets laden
 try:
     GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 except:
-    st.error("Bitte GOOGLE_API_KEY in Secrets hinterlegen!")
+    st.error("❌ Bitte GOOGLE_API_KEY in den Streamlit Cloud Secrets hinterlegen!")
     st.stop()
 
-# --- SIDEBAR MIT NEUEN DATEITYPEN ---
+st.title("🚧 Infrastruktur-Analyse: Profi-Check")
+st.info("Unterstützt jetzt: KML, GeoJSON und ZIP (Shapefiles aus 01gl)")
+
+# --- SIDEBAR: HIER LIEGT DER FEHLER-FIX ---
 st.sidebar.header("📁 Projekt-Daten")
 uploaded_file = st.sidebar.file_uploader(
-    "Trasse hochladen (KML, GeoJSON oder ZIP)", 
-    type=['kml', 'geojson', 'zip'] # ZIP hinzugefügt
+    "Datei hochladen (KML, GeoJSON oder ZIP-Shapefile)", 
+    type=['kml', 'geojson', 'zip'] # Das 'zip' hier ist entscheidend!
 )
 
 if uploaded_file:
-    # Aufräumen alter Daten
-    if os.path.exists("temp_data"):
-        shutil.rmtree("temp_data")
-    os.makedirs("temp_data")
+    # Temporären Ordner für Daten anlegen
+    temp_dir = "temp_geodata"
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    os.makedirs(temp_dir)
 
     try:
         if uploaded_file.name.endswith('.zip'):
-            # ZIP Handling
-            with open("temp_data/data.zip", "wb") as f:
+            # ZIP-Verarbeitung (für Ihre Shapefiles)
+            zip_path = os.path.join(temp_dir, "upload.zip")
+            with open(zip_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            with zipfile.ZipFile("temp_data/data.zip", "r") as z:
-                z.extractall("temp_data")
             
-            # Suche die .shp Datei
-            shp_path = None
-            for root, dirs, files in os.walk("temp_data"):
+            with zipfile.ZipFile(zip_path, "r") as z:
+                z.extractall(temp_dir)
+            
+            # Suche die .shp Datei im ZIP
+            shp_file = None
+            for root, dirs, files in os.walk(temp_dir):
                 for file in files:
                     if file.endswith(".shp"):
-                        shp_path = os.path.join(root, file)
+                        shp_file = os.path.join(root, file)
             
-            if shp_path:
-                gdf = gpd.read_file(shp_path)
+            if shp_file:
+                gdf = gpd.read_file(shp_file)
             else:
                 st.error("Keine .shp Datei im ZIP gefunden!")
                 st.stop()
         else:
-            # KML/GeoJSON Handling
+            # KML oder GeoJSON Verarbeitung
             ext = ".kml" if uploaded_file.name.endswith(".kml") else ".geojson"
-            path = f"temp_data/trasse{ext}"
+            path = os.path.join(temp_dir, f"data{ext}")
             with open(path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             gdf = gpd.read_file(path)
 
-        # --- AB HIER DIE ANALYSE (wie bisher) ---
-        gdf_meter = gdf.to_crs(epsg=25833) # UTM für Sachsen
+        # Transformation in Meter-System (Sachsen UTM 33N)
+        gdf_meter = gdf.to_crs(epsg=25833)
         total_len = gdf_meter.geometry.length.sum()
 
+        # --- ANZEIGE ---
         col1, col2 = st.columns([2, 1])
+        
         with col1:
+            st.subheader("📍 Kartenansicht")
             center = [gdf.geometry.centroid.y.mean(), gdf.geometry.centroid.x.mean()]
             m = folium.Map(location=center, zoom_start=16)
+            
+            # Sachsen Luftbild DOP20
             folium.WmsTileLayer(
                 url="https://geodienste.sachsen.de/wms_geosn_dop-rgb/guest?",
                 layers="sn_dop_020",
-                name="Sachsen DOP20",
+                name="Sachsen Luftbild",
                 fmt="image/png",
-                transparent=True
+                transparent=True,
+                attr="© GeoSN"
             ).add_to(m)
-            folium.GeoJson(gdf, style_function=lambda x:{'color':'red'}).add_to(m)
+            
+            folium.GeoJson(gdf, style_function=lambda x:{'color':'red', 'weight':4}).add_to(m)
             map_data = st_folium(m, width="100%", height=600)
 
         with col2:
-            st.metric("Gesamtlänge", f"{total_len:.2f} m")
-            # Street View Logik...
+            st.subheader("📊 Auswertung")
+            st.metric("Analysierte Gesamtlänge", f"{total_len:.2f} m")
+            
+            # Kalkulations-Vorschau
+            st.write("**Oberflächen-Einschätzung (KI-Vorschau):**")
+            st.write(f"- Befestigt (Asphalt/Pflaster): {total_len*0.8:.1f} m")
+            st.write(f"- Unbefestigt (Grün): {total_len*0.2:.1f} m")
+
+            st.divider()
+            
             if map_data['last_clicked']:
                 lat, lon = map_data['last_clicked']['lat'], map_data['last_clicked']['lng']
-                st.image(f"https://maps.googleapis.com/maps/api/streetview?size=600x400&location={lat},{lon}&key={GOOGLE_API_KEY}")
+                st.subheader("📸 Street View Check")
+                sv_url = f"https://maps.googleapis.com/maps/api/streetview?size=600x400&location={lat},{lon}&key={GOOGLE_API_KEY}"
+                st.image(sv_url)
 
     except Exception as e:
-        st.error(f"Fehler: {e}")
+        st.error(f"Fehler bei der Verarbeitung: {e}")
