@@ -20,7 +20,7 @@ WMS_URL = "https://geodienste.sachsen.de/wms_geosn_dop-rgb/guest?"
 
 # --- ECHTE BILDANALYSE ---
 def analyze_pixel_color(minx, miny, maxx, maxy):
-    """Holt das echte Luftbild-Pixel und analysiert die Farbe (Grün vs. Grau)."""
+    """Holt das echte Luftbild-Patch und analysiert die Farbe (Grün vs. Grau)."""
     try:
         bbox_str = f"{minx},{miny},{maxx},{maxy}"
         params = {
@@ -36,7 +36,6 @@ def analyze_pixel_color(minx, miny, maxx, maxy):
             
             # HSV-Farbraum für Grün-Erkennung (Wiese/Bankett)
             hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-            # Filter für Grüntöne
             mask_green = cv2.inRange(hsv, np.array([35, 30, 30]), np.array([90, 255, 255]))
             green_ratio = cv2.countNonZero(mask_green) / (img.shape[0] * img.shape[1])
             
@@ -49,7 +48,7 @@ def analyze_pixel_color(minx, miny, maxx, maxy):
 @st.cache_data(show_spinner=False)
 def process_high_precision_data(file_bytes, file_name):
     temp_dir = "temp_analysis_1m"
-    # Fix für Bild 8: Robustes Löschen
+    # FIX für Bild 8: ignore_errors verhindert Absturz
     shutil.rmtree(temp_dir, ignore_errors=True)
     os.makedirs(temp_dir, exist_ok=True)
     
@@ -99,7 +98,7 @@ uploaded_file = st.sidebar.file_uploader("Trasse hochladen (1m Präzision)", typ
 
 if uploaded_file:
     with st.spinner("Analysiere Trasse Meter für Meter via WMS..."):
-        # Cache verhindert Flackern bei Klicks
+        # Cache verhindert Flackern
         gdf_seg_m, gdf_seg_w = process_high_precision_data(uploaded_file.getvalue(), uploaded_file.name)
     
     col1, col2 = st.columns([2, 1])
@@ -121,7 +120,7 @@ if uploaded_file:
         total_m = gdf_seg_m.geometry.length.sum()
         st.metric("Gesamtlänge", f"{total_m:,.2f} m".replace(".", ","))
         
-        # Stabiler Fix für die Tabellen-Berechnung
+        # FIX für Bild 16: Gruppierung ohne TypeError
         summary_gdf = gdf_seg_m.copy()
         summary_gdf['seg_len'] = summary_gdf.geometry.length
         stats = summary_gdf.groupby("surface_type")['seg_len'].sum().reset_index()
@@ -131,6 +130,6 @@ if uploaded_file:
 
         if map_data and map_data.get('last_clicked'):
             lat, lon = map_data['last_clicked']['lat'], map_data['last_clicked']['lng']
-            # source=outdoor verhindert Innenaufnahmen (Fix für Bild 7)
+            # source=outdoor verhindert Innenaufnahmen (FIX für Bild 7)
             sv_url = f"https://maps.googleapis.com/maps/api/streetview?size=600x400&location={lat},{lon}&source=outdoor&key={st.secrets['GOOGLE_API_KEY']}"
             st.image(sv_url, caption="Boden-Validierung")
